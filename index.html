@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Organizador de tareas</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#5b3df5">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap">
+<style>
+:root{--bg:#f1f0f7;--panel:#fff;--ink:#1d1a2e;--mute:#6a6580;--line:#dcd9e8;--accent:#5b3df5;--on-accent:#fff;--c0:#c9821a;--c1:#5b3df5;--c2:#1f8a5b;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14121f;--panel:#201d31;--ink:#ece9f7;--mute:#9f9ab5;--line:#34304a;--accent:#8f7bff;--on-accent:#14121f;--c0:#e8a644;--c1:#8f7bff;--c2:#4cc38a}}
+:root[data-theme="dark"]{--bg:#14121f;--panel:#201d31;--ink:#ece9f7;--mute:#9f9ab5;--line:#34304a;--accent:#8f7bff;--on-accent:#14121f;--c0:#e8a644;--c1:#8f7bff;--c2:#4cc38a}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 "Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:20px 16px 8px;max-width:1100px;margin:0 auto}
+h1{font-size:30px;line-height:1.1;margin:0 0 4px;letter-spacing:-.02em;font-weight:800}
+.sub{margin:0;color:var(--mute)}
+.board{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding:12px 16px 32px;max-width:1100px;margin:0 auto}
+.col{flex:0 0 min(86%,340px);scroll-snap-align:start;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;border-top:5px solid var(--c);align-self:flex-start}
+@media (min-width:900px){.board{overflow:visible}.col{flex:1 1 0}}
+.ch{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+h2{font-size:18px;margin:0}
+.n{color:var(--mute);font-size:14px}
+.add{display:flex;gap:6px;margin-bottom:10px}
+input{flex:1;min-width:0;font:inherit;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+button{font:inherit;font-weight:600;min-height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--accent);background:var(--accent);color:var(--on-accent);cursor:pointer}
+button.alt{background:transparent;color:var(--accent)}
+button.del{border-color:var(--line);color:var(--mute)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.card{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:var(--bg)}
+.card p{margin:0 0 8px;overflow-wrap:anywhere}
+.card.done p{text-decoration:line-through;color:var(--mute)}
+.acts{display:flex;flex-wrap:wrap;gap:6px}
+.empty{color:var(--mute);font-size:15px;margin:4px 0 8px}
+.clear{width:100%;margin-top:4px}
+.add{flex-wrap:wrap}
+.add input[type=datetime-local]{flex:1 1 100%;color-scheme:light dark}
+.lbl{flex:1 1 100%;font-size:14px;color:var(--mute);margin-top:2px}
+.due{font-size:14px;color:var(--mute);margin:-4px 0 8px!important}
+.due.late{color:var(--c0);font-weight:600}
+#banner{max-width:1100px;margin:0 auto;padding:0 16px}
+.banner{background:var(--panel);border:2px solid var(--c0);border-radius:12px;padding:12px;margin-top:10px}
+.banner p{margin:0 0 8px;font-weight:600;overflow-wrap:anywhere}
+#perm{margin-top:10px}
+</style>
+</head>
+<body>
+<header>
+<h1>Organizador de tareas</h1>
+<p class="sub">Agrega tareas y muévelas de una columna a otra. Se guardan en este navegador. Los recordatorios avisan solo mientras la página está abierta.</p>
+<button id="perm" class="alt" hidden>Activar avisos</button> <button id="install" class="alt" hidden>Instalar app</button>
+</header>
+<div id="banner" aria-live="assertive"></div>
+<div class="board" id="board"></div>
+
+<script>
+const COLS=[
+ {name:"Por hacer",c:"var(--c0)",empty:"Nada pendiente. Agrega la primera tarea."},
+ {name:"En curso",c:"var(--c1)",empty:"Mueve aquí lo que estás haciendo ahora."},
+ {name:"Hecho",c:"var(--c2)",empty:"Aquí aparecerán las tareas terminadas."}
+];
+const KEY="organizador-tareas-v1";
+let tasks=[];
+try{const s=localStorage.getItem(KEY);if(s)tasks=JSON.parse(s)||[]}catch(e){}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(tasks))}catch(e){}}
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+function btn(label,cls,fn){const b=el("button",cls,label);b.onclick=fn;return b}
+function move(id,col){const t=tasks.find(x=>x.id===id);if(t){t.col=col;save();render()}}
+function del(id){tasks=tasks.filter(x=>x.id!==id);save();render()}
+function add(col,input,dt){
+  const v=input.value.trim();if(!v)return;
+  const due=dt&&dt.value?new Date(dt.value).getTime():null;
+  tasks.push({id:Date.now()+Math.random(),text:v,col,due:isNaN(due)?null:due,fired:false});save();render();check();
+  const again=document.querySelector('[data-col="'+col+'"] input');if(again)again.focus();
+}
+function render(){
+  const board=document.getElementById("board"),keep=board.scrollLeft;
+  board.textContent="";
+  COLS.forEach((C,i)=>{
+    const list=tasks.filter(t=>t.col===i);
+    const col=el("section","col");col.style.setProperty("--c",C.c);col.dataset.col=i;
+    const h=el("div","ch");h.append(el("h2",null,C.name),el("span","n",list.length+(list.length===1?" tarea":" tareas")));
+    col.append(h);
+    if(i===0){
+      const f=el("div","add"),inp=el("input"),dt=el("input");inp.placeholder="Nueva tarea";inp.setAttribute("aria-label","Nueva tarea");inp.maxLength=140;
+      dt.type="datetime-local";dt.setAttribute("aria-label","Recordatorio (opcional)");
+      inp.onkeydown=e=>{if(e.key==="Enter")add(i,inp,dt)};
+      f.append(inp,btn("Agregar","",()=>add(i,inp,dt)),el("span","lbl","Recordatorio (opcional)"),dt);col.append(f);
+    }
+    if(!list.length)col.append(el("p","empty",C.empty));
+    list.forEach(t=>{
+      const card=el("div","card"+(i===2?" done":""));card.append(el("p",null,t.text));
+      if(t.due){const late=i!==2&&t.due<=Date.now();card.append(el("p","due"+(late?" late":""),(late?"Venció: ":"Recordar: ")+new Date(t.due).toLocaleString("es",{dateStyle:"medium",timeStyle:"short"})))}
+      const a=el("div","acts");
+      if(i===0)a.append(btn("Empezar","alt",()=>move(t.id,1)));
+      if(i===1)a.append(btn("Volver a Por hacer","alt",()=>move(t.id,0)),btn("Marcar hecha","",()=>move(t.id,2)));
+      if(i===2)a.append(btn("Reabrir","alt",()=>move(t.id,1)));
+      a.append(btn("Borrar","del",()=>del(t.id)));
+      card.append(a);col.append(card);
+    });
+    if(i===2&&list.length)col.append(btn("Borrar todas las hechas","alt clear",()=>{tasks=tasks.filter(t=>t.col!==2);save();render()}));
+    board.append(col);
+  });
+  board.scrollLeft=keep;
+}
+
+/* Recordatorios */
+function ping(t){
+  try{
+    if("Notification" in window&&Notification.permission==="granted"){
+      const opts={body:t.text,icon:"icon-192.png",badge:"icon-192.png",tag:String(t.id)};
+      if("serviceWorker" in navigator)navigator.serviceWorker.ready.then(r=>r.showNotification("Recordatorio",opts)).catch(()=>{try{new Notification("Recordatorio",opts)}catch(e){}});
+      else new Notification("Recordatorio",opts);
+    }
+  }catch(e){}
+  try{if(navigator.vibrate)navigator.vibrate([200,100,200])}catch(e){}
+}
+function showBanner(t){
+  const b=el("div","banner");b.append(el("p",null,"Recordatorio: "+t.text));
+  const a=el("div","acts");
+  a.append(
+    btn("Entendido","alt",()=>b.remove()),
+    btn("Posponer 10 min","alt",()=>{t.due=Date.now()+600000;t.fired=false;save();b.remove();render()}),
+    btn("Marcar hecha","",()=>{b.remove();move(t.id,2)})
+  );
+  b.append(a);document.getElementById("banner").append(b);
+}
+function check(){
+  const now=Date.now();let any=false;
+  tasks.forEach(t=>{if(t.due&&!t.fired&&t.col!==2&&t.due<=now){t.fired=true;any=true;showBanner(t);ping(t)}});
+  if(any){save();render()}
+}
+const perm=document.getElementById("perm");
+if("Notification" in window&&Notification.permission==="default"){
+  perm.hidden=false;
+  perm.onclick=async()=>{try{await Notification.requestPermission()}catch(e){}perm.hidden=Notification.permission!=="default"};
+}
+let deferred=null;
+const inst=document.getElementById("install");
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferred=e;inst.hidden=false});
+inst.onclick=async()=>{if(!deferred)return;deferred.prompt();try{await deferred.userChoice}catch(e){}deferred=null;inst.hidden=true};
+window.addEventListener("appinstalled",()=>{inst.hidden=true});
+if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)check()});
+render();check();setInterval(check,15000);
+</script>
+</body>
+</html>
